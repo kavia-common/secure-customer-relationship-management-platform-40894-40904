@@ -46,7 +46,7 @@ def login(payload: LoginIn, request: Request) -> TokenOut:
     return TokenOut(token=out["token"], expires_at=out["expires_at"].isoformat())
 
 
-@router.post("/logout", summary="Logout", status_code=204)
+@router.post("/logout", summary="Logout", status_code=204, response_class=Response)
 def logout(request: Request, user=Depends(get_current_user)) -> None:
     """Revoke the current session token."""
     auth_header = request.headers.get("Authorization")
