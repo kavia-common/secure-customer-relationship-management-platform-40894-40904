@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import logging
 import time
 from typing import Callable
 
+import uvicorn
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -12,6 +14,9 @@ from src.api.routers import admin, auth, customers, inbox, interactions, metrics
 from src.core.config import get_settings
 from src.core.db import close_pool, init_pool
 from src.core.migrations import apply_migrations_from_path
+
+logger = logging.getLogger("crm_backend.api.main")
+logging.basicConfig(level=logging.INFO)
 
 settings = get_settings()
 
@@ -86,10 +91,12 @@ def on_startup() -> None:
     try:
         init_pool()
         if settings.migrations_path:
-            apply_migrations_from_path(settings.migrations_path)
-    except Exception:
-        # Avoid crashing docs generation on import; runtime logs should capture actual failure
-        pass
+            applied = apply_migrations_from_path(settings.migrations_path)
+            if applied:
+                logger.info("Applied migrations: %s", ", ".join(applied))
+    except Exception as e:
+        # Avoid crashing on startup if DB is not available; run in degraded mode and log
+        logger.warning("Startup degraded: database not available or migration failed: %s", e)
 
 
 @app.on_event("shutdown")
@@ -98,6 +105,7 @@ def on_shutdown() -> None:
     try:
         close_pool()
     except Exception:
+        # Best-effort cleanup
         pass
 
 
@@ -120,3 +128,16 @@ app.include_router(workflows.router)
 app.include_router(inbox.router)
 app.include_router(metrics.router)
 app.include_router(admin.router)
+
+
+# PUBLIC_INTERFACE
+def run_server() -> None:
+    """Run the Uvicorn server binding to 0.0.0.0 and BACKEND_PORT (default 3001)."""
+    host = "0.0.0.0"
+    port = int(settings.backend_port)
+    logger.info("Starting server on %s:%s", host, port)
+    uvicorn.run(app, host=host, port=port)
+
+
+if __name__ == "__main__":
+    run_server()
