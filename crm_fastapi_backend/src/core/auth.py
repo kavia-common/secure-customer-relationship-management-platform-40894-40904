@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import datetime as dt
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, List
 
 from fastapi import Depends, HTTPException, Request, status
 
@@ -192,3 +192,22 @@ def require_role(required: str):
         return user
 
     return _dep
+
+
+# PUBLIC_INTERFACE
+def require_roles(allowed: List[str]):
+    """Dependency factory to allow multiple roles (RBAC)."""
+
+    def _dep(user=Depends(get_current_user)) -> Dict[str, Any]:
+        role = user.get("role")
+        if role not in allowed:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient role")
+        return user
+
+    return _dep
+
+
+# PUBLIC_INTERFACE
+def create_session_for_user(user_id: int) -> Dict[str, Any]:
+    """Issue a new session token for the given user id (for refresh flows)."""
+    return _create_session(user_id)

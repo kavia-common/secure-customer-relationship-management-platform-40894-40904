@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import json
+import datetime as dt
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
 
 from src.core.audit import audit_log
@@ -12,7 +13,7 @@ from src.core.db import get_conn
 
 router = APIRouter(prefix="/requests", tags=["Requests"])
 
-VALID_STATUSES = ["open", "in_progress", "resolved", "closed"]
+VALID_STATUSES = ["open", "assigned", "in_progress", "escalated", "resolved", "closed"]
 
 
 class RequestIn(BaseModel):
@@ -23,9 +24,19 @@ class RequestIn(BaseModel):
     meta: Optional[dict] = Field(default_factory=dict, description="Additional metadata")
 
 
+class RequestPatch(BaseModel):
+    subject: Optional[str] = Field(None, description="Subject/title")
+    description: Optional[str] = Field(None, description="Description")
+    priority: Optional[str] = Field(None, description="Priority (low/normal/high)")
+    meta: Optional[dict] = Field(None, description="Additional metadata")
+    assignee_id: Optional[int] = Field(None, description="Assigned agent id")
+
+
 class RequestOut(RequestIn):
     id: int = Field(..., description="Request ID")
     status: str = Field(..., description="Current status")
+    # Optional fields that may exist
+    assignee_id: Optional[int] = Field(None, description="Assigned agent id")
 
 
 class TransitionIn(BaseModel):
@@ -53,12 +64,17 @@ def _ensure_tables() -> None:
                 status text not null default 'open',
                 priority text not null default 'normal',
                 meta jsonb not null default '{}'::jsonb,
+                assignee_id bigint null,
+                sla_due_at timestamptz null,
                 created_by bigint null,
                 created_at timestamptz not null default now(),
                 updated_at timestamptz not null default now()
             )
             """
         )
+        # Ensure new columns exist if table was created previously
+        cur.execute("alter table requests add column if not exists assignee_id bigint null")
+        cur.execute("alter table requests add column if not exists sla_due_at timestamptz null")
         cur.execute(
             """
             create table if not exists request_history (
@@ -83,7 +99,7 @@ def create_request(payload: RequestIn, request: Request, user=Depends(get_curren
             """
             insert into requests (customer_id, subject, description, status, priority, meta, created_by)
             values (%s, %s, %s, 'open', %s, %s::jsonb, %s)
-            returning id, customer_id, subject, description, status, priority, meta
+            returning id, customer_id, subject, description, status, priority, meta, assignee_id
             """,
             (payload.customer_id, payload.subject, payload.description, payload.priority, json.dumps(payload.meta or {}), user.get("id")),
         )
@@ -103,8 +119,144 @@ def create_request(payload: RequestIn, request: Request, user=Depends(get_curren
             status=r[4],
             priority=r[5],
             meta=r[6] or {},
+            assignee_id=r[7],
         )
     audit_log("create", "request", out.id, {"customer_id": payload.customer_id}, user.get("id"), request.client.host if request.client else None)
+    return out
+
+
+@router.get("", summary="List requests", response_model=List[RequestOut])
+def list_requests(
+    status_q: Optional[str] = Query(None, alias="status", description="Filter by status"),
+    priority: Optional[str] = Query(None, description="Filter by priority"),
+    assignee: Optional[int] = Query(None, description="Filter by assignee id"),
+    customer_id: Optional[int] = Query(None, description="Filter by customer id"),
+    start: Optional[str] = Query(None, description="Start ISO timestamp"),
+    end: Optional[str] = Query(None, description="End ISO timestamp"),
+    sla: Optional[str] = Query(None, description="SLA filter (breached)"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
+    user=Depends(get_current_user),
+) -> List[RequestOut]:
+    """List requests with rich filters and pagination."""
+    _ensure_tables()
+    conditions = []
+    params = []
+    if status_q:
+        conditions.append("status=%s")
+        params.append(status_q)
+    if priority:
+        conditions.append("priority=%s")
+        params.append(priority)
+    if assignee is not None:
+        conditions.append("assignee_id=%s")
+        params.append(assignee)
+    if customer_id is not None:
+        conditions.append("customer_id=%s")
+        params.append(customer_id)
+    if start:
+        conditions.append("created_at >= %s")
+        params.append(dt.datetime.fromisoformat(start))
+    if end:
+        conditions.append("created_at <= %s")
+        params.append(dt.datetime.fromisoformat(end))
+    if sla and sla.lower() == "breached":
+        conditions.append("sla_due_at is not null and sla_due_at < now() and status not in ('resolved','closed')")
+    where = f"where {' and '.join(conditions)}" if conditions else ""
+    offset = (page - 1) * page_size
+    sql = f"""
+        select id, customer_id, subject, description, status, priority, meta, assignee_id
+        from requests
+        {where}
+        order by updated_at desc
+        limit %s offset %s
+    """
+    with get_conn() as conn, conn.cursor() as cur:
+        cur.execute(sql, (*params, page_size, offset))
+        rows = cur.fetchall() or []
+        return [
+            RequestOut(
+                id=int(r[0]),
+                customer_id=int(r[1]),
+                subject=r[2],
+                description=r[3],
+                status=r[4],
+                priority=r[5],
+                meta=r[6] or {},
+                assignee_id=r[7],
+            )
+            for r in rows
+        ]
+
+
+@router.get("/{request_id}", summary="Get request", response_model=RequestOut)
+def get_request(request_id: int, user=Depends(get_current_user)) -> RequestOut:
+    """Get a single request by id."""
+    _ensure_tables()
+    with get_conn() as conn, conn.cursor() as cur:
+        cur.execute(
+            "select id, customer_id, subject, description, status, priority, meta, assignee_id from requests where id=%s",
+            (request_id,),
+        )
+        r = cur.fetchone()
+        if not r:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+        return RequestOut(
+            id=int(r[0]),
+            customer_id=int(r[1]),
+            subject=r[2],
+            description=r[3],
+            status=r[4],
+            priority=r[5],
+            meta=r[6] or {},
+            assignee_id=r[7],
+        )
+
+
+@router.patch("/{request_id}", summary="Patch request", response_model=RequestOut)
+def patch_request(request_id: int, payload: RequestPatch, request: Request, user=Depends(get_current_user)) -> RequestOut:
+    """Patch request fields (subject, description, priority, meta, assignee)."""
+    _ensure_tables()
+    updates = []
+    params = []
+    if payload.subject is not None:
+        updates.append("subject=%s")
+        params.append(payload.subject)
+    if payload.description is not None:
+        updates.append("description=%s")
+        params.append(payload.description)
+    if payload.priority is not None:
+        updates.append("priority=%s")
+        params.append(payload.priority)
+    if payload.meta is not None:
+        updates.append("meta=%s::jsonb")
+        params.append(json.dumps(payload.meta))
+    if payload.assignee_id is not None:
+        updates.append("assignee_id=%s")
+        params.append(payload.assignee_id)
+        # set status to assigned if currently open
+        updates.append("status=case when status='open' then 'assigned' else status end")
+    if not updates:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No changes provided")
+    with get_conn() as conn, conn.cursor() as cur:
+        cur.execute(
+            f"update requests set {', '.join(updates)}, updated_at=now() where id=%s returning id, customer_id, subject, description, status, priority, meta, assignee_id",
+            (*params, request_id),
+        )
+        r = cur.fetchone()
+        if not r:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+        out = RequestOut(
+            id=int(r[0]),
+            customer_id=int(r[1]),
+            subject=r[2],
+            description=r[3],
+            status=r[4],
+            priority=r[5],
+            meta=r[6] or {},
+            assignee_id=r[7],
+        )
+    audit_log("update", "request", request_id, {"fields": list(payload.model_dump(exclude_none=True).keys())}, user.get("id"), request.client.host if request.client else None)
     return out
 
 
@@ -148,3 +300,15 @@ def get_history(request_id: int, user=Depends(get_current_user)) -> List[History
             HistoryOut(id=int(r[0]), request_id=int(r[1]), from_status=r[2], to_status=r[3], note=r[4])
             for r in rows
         ]
+
+
+@router.post("/{request_id}/close", summary="Close request", response_model=HistoryOut)
+def close_request(request_id: int, request: Request, user=Depends(get_current_user)) -> HistoryOut:
+    """Close a request and add a history event."""
+    return transition_request(request_id, TransitionIn(to_status="closed", note="closed"), request, user)
+
+
+@router.post("/{request_id}/escalate", summary="Escalate request", response_model=HistoryOut)
+def escalate_request(request_id: int, request: Request, user=Depends(get_current_user)) -> HistoryOut:
+    """Escalate a request and add a history event."""
+    return transition_request(request_id, TransitionIn(to_status="escalated", note="escalated"), request, user)

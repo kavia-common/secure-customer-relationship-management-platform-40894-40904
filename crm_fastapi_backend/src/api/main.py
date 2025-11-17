@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import time
 from typing import Callable
 
@@ -11,8 +12,9 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 
 from src.api.routers import admin, auth, customers, inbox, interactions, metrics, requests as reqs, workflows
+from src.api.routers import users
 from src.core.config import get_settings
-from src.core.db import close_pool, init_pool
+from src.core.db import close_pool, init_pool, get_conn
 from src.core.migrations import apply_migrations_from_path
 
 logger = logging.getLogger("crm_backend.api.main")
@@ -29,6 +31,7 @@ openapi_tags = [
     {"name": "Inbox", "description": "Agent inbox"},
     {"name": "Metrics", "description": "KPIs and dashboard metrics"},
     {"name": "Admin", "description": "User/role management and audit"},
+    {"name": "Health", "description": "Liveness, readiness, and migration status"},
 ]
 
 app = FastAPI(
@@ -122,11 +125,54 @@ def on_shutdown() -> None:
 @app.get(
     "/",
     summary="Health Check",
-    tags=["Metrics"],
+    tags=["Health"],
 )
 def health_check():
     """Simple liveness check."""
     return {"status": "ok"}
+
+
+@app.get(
+    "/health/db",
+    summary="Database health",
+    tags=["Health"],
+)
+def health_db():
+    """Attempt a simple DB query to verify connectivity and basic readiness."""
+    try:
+        with get_conn() as conn, conn.cursor() as cur:
+            cur.execute("select 1")
+            cur.fetchone()
+        return {"status": "ok"}
+    except Exception:
+        return JSONResponse(status_code=503, content={"status": "degraded", "detail": "database unavailable"})
+
+
+@app.get(
+    "/health/migrations",
+    summary="Migration status",
+    tags=["Health"],
+)
+def health_migrations():
+    """Report migration tracking status and pending count if MIGRATIONS_PATH is configured."""
+    try:
+        applied_count = 0
+        with get_conn() as conn, conn.cursor() as cur:
+            # schema_migrations may not exist yet
+            cur.execute(
+                "select to_regclass('public.schema_migrations') is not null"
+            )
+            exists = bool(cur.fetchone()[0])
+            if exists:
+                cur.execute("select count(1) from schema_migrations")
+                applied_count = int(cur.fetchone()[0])
+        pending = None
+        if settings.migrations_path and os.path.isdir(settings.migrations_path):
+            sql_files = [f for f in os.listdir(settings.migrations_path) if f.lower().endswith(".sql")]
+            pending = max(0, len(sql_files) - applied_count)
+        return {"status": "ok", "applied": applied_count, "pending": pending}
+    except Exception:
+        return JSONResponse(status_code=503, content={"status": "degraded", "detail": "migration tracking unavailable"})
 
 
 # Register routers
@@ -138,6 +184,7 @@ app.include_router(workflows.router)
 app.include_router(inbox.router)
 app.include_router(metrics.router)
 app.include_router(admin.router)
+app.include_router(users.router)
 
 
 # PUBLIC_INTERFACE

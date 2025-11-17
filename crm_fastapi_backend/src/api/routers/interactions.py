@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import datetime as dt
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
@@ -74,18 +75,32 @@ def create_interaction(payload: InteractionIn, request: Request, user=Depends(ge
 @router.get("", summary="List interactions", response_model=List[InteractionOut])
 def list_interactions(
     customer_id: Optional[int] = Query(None, description="Filter by customer ID"),
+    channel: Optional[str] = Query(None, description="Filter by channel"),
+    start: Optional[str] = Query(None, description="Start ISO timestamp"),
+    end: Optional[str] = Query(None, description="End ISO timestamp"),
     user=Depends(get_current_user),
 ) -> List[InteractionOut]:
-    """List interactions, optionally by customer."""
+    """List interactions, optionally filtered by customer, channel, and date range."""
     _ensure_table()
+    conditions = []
+    params = []
+    if customer_id is not None:
+        conditions.append("customer_id=%s")
+        params.append(customer_id)
+    if channel:
+        conditions.append("channel=%s")
+        params.append(channel)
+    if start:
+        conditions.append("created_at >= %s")
+        params.append(dt.datetime.fromisoformat(start))
+    if end:
+        conditions.append("created_at <= %s")
+        params.append(dt.datetime.fromisoformat(end))
+
+    where = f"where {' and '.join(conditions)}" if conditions else ""
+    sql = f"select id, customer_id, type, channel, content, meta from interactions {where} order by id desc limit 100"
     with get_conn() as conn, conn.cursor() as cur:
-        if customer_id is not None:
-            cur.execute(
-                "select id, customer_id, type, channel, content, meta from interactions where customer_id=%s order by id desc limit 100",
-                (customer_id,),
-            )
-        else:
-            cur.execute("select id, customer_id, type, channel, content, meta from interactions order by id desc limit 100")
+        cur.execute(sql, params)
         rows = cur.fetchall() or []
         return [
             InteractionOut(id=int(r[0]), customer_id=int(r[1]), type=r[2], channel=r[3], content=r[4], meta=r[5] or {})

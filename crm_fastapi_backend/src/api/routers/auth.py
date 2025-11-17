@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, EmailStr, Field
 
 from src.core.audit import audit_log
-from src.core.auth import get_current_user, login_user, revoke_token, signup_user
+from src.core.auth import create_session_for_user, get_current_user, login_user, revoke_token, signup_user
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
@@ -56,6 +56,13 @@ async def logout(request: Request, user=Depends(get_current_user)) -> dict:
     revoke_token(token)
     audit_log("logout", "session", None, None, user.get("id"), request.client.host if request.client else None)
     return {"detail": "logged out"}
+
+
+@router.post("/refresh", summary="Refresh token", response_model=TokenOut)
+def refresh_token(user=Depends(get_current_user)) -> TokenOut:
+    """Refresh the bearer token for the current user by issuing a new session."""
+    out = create_session_for_user(user["id"])
+    return TokenOut(token=out["token"], expires_at=out["expires_at"].isoformat())
 
 
 @router.get("/me", summary="Who am I", response_model=dict)

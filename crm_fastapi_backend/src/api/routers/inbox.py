@@ -18,12 +18,12 @@ class InboxItem(BaseModel):
     status: str = Field(..., description="Status")
 
 
-@router.get("", summary="List inbox items", response_model=List[InboxItem])
+@router.get("", summary="List inbox items (deprecated)", response_model=List[InboxItem])
 def list_inbox(
     only_priority: Optional[str] = Query(None, description="Filter by priority"),
     user=Depends(get_current_user),
 ) -> List[InboxItem]:
-    """Return a minimal stubbed inbox for the current user."""
+    """Return a minimal stubbed inbox for the current user. Deprecated in favor of /inbox/messages."""
     items = [
         InboxItem(id="req-101", type="request", title="Follow up with ACME", priority="high", status="open"),
         InboxItem(id="int-52", type="interaction", title="New chat message", priority="normal", status="unread"),
@@ -31,3 +31,25 @@ def list_inbox(
     if only_priority:
         items = [i for i in items if i.priority == only_priority]
     return items
+
+
+@router.get("/messages", summary="List inbox messages", response_model=List[InboxItem])
+def list_messages(
+    priority: Optional[str] = Query(None, description="Filter by priority"),
+    user=Depends(get_current_user),
+) -> List[InboxItem]:
+    """Stubbed inbox messages list."""
+    return list_inbox(priority, user)  # reuse stub
+
+
+@router.get("/messages/{message_id}", summary="Get inbox message", response_model=InboxItem)
+def get_message(message_id: str, user=Depends(get_current_user)) -> InboxItem:
+    """Stubbed inbox message by id."""
+    # Just echo a fake item
+    return InboxItem(id=message_id, type="request", title="Stub message", priority="normal", status="open")
+
+
+@router.post("/messages", summary="Create inbox message", response_model=InboxItem, status_code=201)
+def create_message(item: InboxItem, user=Depends(get_current_user)) -> InboxItem:
+    """Stubbed create message (echoes back)."""
+    return item
