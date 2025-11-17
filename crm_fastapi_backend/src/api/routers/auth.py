@@ -46,9 +46,9 @@ def login(payload: LoginIn, request: Request) -> TokenOut:
     return TokenOut(token=out["token"], expires_at=out["expires_at"].isoformat())
 
 
-@router.post("/logout", summary="Logout", status_code=204, response_class=Response)
-def logout(request: Request, user=Depends(get_current_user)) -> None:
-    """Revoke the current session token."""
+@router.post("/logout", summary="Logout", status_code=204)
+async def logout(request: Request, user=Depends(get_current_user)) -> Response:
+    """Revoke the current session token and return 204 No Content."""
     auth_header = request.headers.get("Authorization")
     if not auth_header:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing Authorization header")

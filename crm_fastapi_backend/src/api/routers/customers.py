@@ -123,9 +123,9 @@ def update_customer(customer_id: int, payload: CustomerIn, request: Request, use
     return out
 
 
-@router.delete("/{customer_id}", summary="Delete customer", status_code=204, response_class=Response)
-def delete_customer(customer_id: int, request: Request, user=Depends(get_current_user)) -> None:
-    """Delete a customer."""
+@router.delete("/{customer_id}", summary="Delete customer", status_code=204)
+async def delete_customer(customer_id: int, request: Request, user=Depends(get_current_user)) -> Response:
+    """Delete a customer and return 204 No Content."""
     _ensure_table()
     with get_conn() as conn, conn.cursor() as cur:
         cur.execute("delete from customers where id=%s", (customer_id,))
