@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel, EmailStr, Field
 
 from src.core.audit import audit_log
@@ -55,7 +55,7 @@ def logout(request: Request, user=Depends(get_current_user)) -> None:
     token = auth_header.split(" ", 1)[1]
     revoke_token(token)
     audit_log("logout", "session", None, None, user.get("id"), request.client.host if request.client else None)
-    return None
+    return Response(status_code=204)
 
 
 @router.get("/me", summary="Who am I", response_model=dict)

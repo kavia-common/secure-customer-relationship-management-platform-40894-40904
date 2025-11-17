@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel, EmailStr, Field
 
 from src.core.audit import audit_log
@@ -130,4 +130,4 @@ def delete_customer(customer_id: int, request: Request, user=Depends(get_current
     with get_conn() as conn, conn.cursor() as cur:
         cur.execute("delete from customers where id=%s", (customer_id,))
     audit_log("delete", "customer", customer_id, None, user.get("id"), request.client.host if request.client else None)
-    return None
+    return Response(status_code=204)
