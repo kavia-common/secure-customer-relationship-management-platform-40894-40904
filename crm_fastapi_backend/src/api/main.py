@@ -88,8 +88,18 @@ app.add_middleware(RateLimiterMiddleware)
 @app.on_event("startup")
 def on_startup() -> None:
     """Initialize DB pool and run migrations (if configured)."""
+    # Log effective configuration at boot to aid diagnostics
+    logger.info(
+        "Boot configuration: BACKEND_PORT=%s, CORS_ALLOW_ORIGINS=%s, DATABASE_URL set=%s, MIGRATIONS_PATH=%s",
+        settings.backend_port,
+        settings.cors_origins,
+        bool(settings.database_url),
+        settings.migrations_path or "<none>",
+    )
     try:
         init_pool()
+        if not settings.database_url:
+            logger.warning("DATABASE_URL not set; running in degraded mode (DB-backed endpoints will error).")
         if settings.migrations_path:
             applied = apply_migrations_from_path(settings.migrations_path)
             if applied:
