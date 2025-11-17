@@ -123,7 +123,7 @@ def update_customer(customer_id: int, payload: CustomerIn, request: Request, use
     return out
 
 
-@router.delete("/{customer_id}", summary="Delete customer", status_code=204)
+@router.delete("/{customer_id}", summary="Delete customer", status_code=204, response_class=Response)
 def delete_customer(customer_id: int, request: Request, user=Depends(get_current_user)) -> None:
     """Delete a customer."""
     _ensure_table()
