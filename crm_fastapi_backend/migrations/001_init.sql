@@ -1,5 +1,11 @@
 -- Initial schema for CRM backend
 
+-- Ensure tracker exists (idempotent) even if the runner didn't create it yet
+create table if not exists schema_migrations (
+    filename text primary key,
+    applied_at timestamptz not null default now()
+);
+
 create table if not exists users (
     id bigserial primary key,
     email text not null unique,
