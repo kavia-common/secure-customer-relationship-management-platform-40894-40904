@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, EmailStr, Field
 
 from src.core.audit import audit_log
@@ -123,11 +123,11 @@ def update_customer(customer_id: int, payload: CustomerIn, request: Request, use
     return out
 
 
-@router.delete("/{customer_id}", summary="Delete customer", status_code=204)
-async def delete_customer(customer_id: int, request: Request, user=Depends(get_current_user)) -> Response:
-    """Delete a customer and return 204 No Content."""
+@router.delete("/{customer_id}", summary="Delete customer", status_code=200)
+async def delete_customer(customer_id: int, request: Request, user=Depends(get_current_user)) -> dict:
+    """Delete a customer and return a small confirmation JSON with HTTP 200."""
     _ensure_table()
     with get_conn() as conn, conn.cursor() as cur:
         cur.execute("delete from customers where id=%s", (customer_id,))
     audit_log("delete", "customer", customer_id, None, user.get("id"), request.client.host if request.client else None)
-    return Response(status_code=204)
+    return {"detail": "deleted"}

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, EmailStr, Field
 
 from src.core.audit import audit_log
@@ -46,16 +46,16 @@ def login(payload: LoginIn, request: Request) -> TokenOut:
     return TokenOut(token=out["token"], expires_at=out["expires_at"].isoformat())
 
 
-@router.post("/logout", summary="Logout", status_code=204)
-async def logout(request: Request, user=Depends(get_current_user)) -> Response:
-    """Revoke the current session token and return 204 No Content."""
+@router.post("/logout", summary="Logout", status_code=200)
+async def logout(request: Request, user=Depends(get_current_user)) -> dict:
+    """Revoke the current session token and return a confirmation JSON with HTTP 200."""
     auth_header = request.headers.get("Authorization")
     if not auth_header:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing Authorization header")
     token = auth_header.split(" ", 1)[1]
     revoke_token(token)
     audit_log("logout", "session", None, None, user.get("id"), request.client.host if request.client else None)
-    return Response(status_code=204)
+    return {"detail": "logged out"}
 
 
 @router.get("/me", summary="Who am I", response_model=dict)
