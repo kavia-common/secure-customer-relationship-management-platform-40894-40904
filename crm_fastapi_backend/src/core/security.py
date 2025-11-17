@@ -7,9 +7,12 @@ import secrets
 from dataclasses import dataclass
 from typing import Optional
 
-
+# Tuning parameters for password hashing
 PBKDF2_ITERATIONS = 200_000
 SALT_BYTES = 16
+
+# Token hashing algorithm (sufficient for random opaque tokens)
+TOKEN_HASH_ALGO = "sha256"
 
 
 @dataclass
@@ -32,7 +35,12 @@ def hash_password(password: str) -> PasswordHash:
     """Generate a secure PBKDF2 password hash with random salt."""
     salt = secrets.token_bytes(SALT_BYTES)
     hash_hex = _pbkdf2_hash(password, salt)
-    return PasswordHash(algo="pbkdf2_sha256", iterations=PBKDF2_ITERATIONS, salt_b64=base64.b64encode(salt).decode(), hash_hex=hash_hex)
+    return PasswordHash(
+        algo="pbkdf2_sha256",
+        iterations=PBKDF2_ITERATIONS,
+        salt_b64=base64.b64encode(salt).decode(),
+        hash_hex=hash_hex,
+    )
 
 
 # PUBLIC_INTERFACE
@@ -50,6 +58,18 @@ def verify_password(password: str, ph: PasswordHash) -> bool:
 def generate_token(nbytes: int = 32) -> str:
     """Generate a cryptographically secure opaque token."""
     return secrets.token_urlsafe(nbytes)
+
+
+# PUBLIC_INTERFACE
+def hash_token(token: str) -> str:
+    """Return a SHA-256 hex digest fingerprint of a bearer token for DB storage.
+
+    Notes:
+        - Tokens are high-entropy, randomly generated values; hashing with
+          SHA-256 is sufficient to protect at-rest token values.
+        - Use with constant-time comparison when verifying.
+    """
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
 # PUBLIC_INTERFACE

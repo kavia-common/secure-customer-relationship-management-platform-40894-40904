@@ -2,11 +2,12 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel, EmailStr, Field
 
 from src.core.audit import audit_log
 from src.core.auth import create_session_for_user, get_current_user, login_user, revoke_token, signup_user
+from src.core.security import parse_bearer_token
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
@@ -49,16 +50,15 @@ def login(payload: LoginIn, request: Request) -> TokenOut:
 
 
 # PUBLIC_INTERFACE
-@router.post("/logout", summary="Logout", status_code=200)
-async def logout(request: Request, user=Depends(get_current_user)) -> dict:
-    """Revoke the current session token and return a confirmation JSON with HTTP 200."""
-    auth_header = request.headers.get("Authorization")
-    if not auth_header:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing Authorization header")
-    token = auth_header.split(" ", 1)[1]
+@router.post("/logout", summary="Logout", status_code=204)
+async def logout(request: Request, user=Depends(get_current_user)) -> Response:
+    """Revoke the current session token and return 204 No Content."""
+    token = parse_bearer_token(request.headers.get("Authorization"))
+    if not token:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing Authorization bearer token")
     revoke_token(token)
     audit_log("logout", "session", None, None, user.get("id"), request.client.host if request.client else None)
-    return {"detail": "logged out"}
+    return Response(status_code=204)
 
 
 # PUBLIC_INTERFACE

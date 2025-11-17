@@ -7,11 +7,23 @@ from fastapi import Depends, HTTPException, Request, status
 
 from src.core.config import get_settings
 from src.core.db import get_conn
-from src.core.security import PasswordHash, generate_token, hash_password, parse_bearer_token, verify_password
+from src.core.security import (
+    PasswordHash,
+    generate_token,
+    hash_password,
+    hash_token,
+    parse_bearer_token,
+    verify_password,
+)
 
 
 def _ensure_user_tables() -> None:
-    """Create users and sessions tables if they do not exist."""
+    """Create users and sessions tables if they do not exist.
+
+    Note:
+        - The sessions.token column stores a hash (sha256 hex) of the actual token.
+          The raw token value is never stored in the database.
+    """
     with get_conn() as conn, conn.cursor() as cur:
         cur.execute(
             """
@@ -104,24 +116,33 @@ def _get_user_by_id(user_id: int) -> Optional[Dict[str, Any]]:
 
 
 def _create_session(user_id: int) -> Dict[str, Any]:
+    """Create a new session and return the raw token and expiry.
+
+    Security:
+        - Stores only the SHA-256 hex digest of the token in the database.
+        - Returns the raw token to the caller for use as a bearer token.
+    """
     settings = get_settings()
     ttl = dt.timedelta(seconds=settings.token_ttl_seconds)
     token = generate_token()
+    token_hash_hex = hash_token(token)
     expires_at = dt.datetime.now(dt.timezone.utc) + ttl
     with get_conn() as conn, conn.cursor() as cur:
         cur.execute(
-            "insert into sessions (token, user_id, expires_at) values (%s, %s, %s) returning token, expires_at",
-            (token, user_id, expires_at),
+            "insert into sessions (token, user_id, expires_at) values (%s, %s, %s) returning expires_at",
+            (token_hash_hex, user_id, expires_at),
         )
         r = cur.fetchone()
         if not r:
             raise RuntimeError("Failed to create session")
-        return {"token": r[0], "expires_at": r[1]}
+        return {"token": token, "expires_at": r[0]}
 
 
 def _revoke_session(token: str) -> None:
+    """Revoke the session identified by the provided raw token."""
+    token_hash_hex = hash_token(token)
     with get_conn() as conn, conn.cursor() as cur:
-        cur.execute("update sessions set revoked=true where token=%s", (token,))
+        cur.execute("update sessions set revoked=true where token=%s", (token_hash_hex,))
 
 
 # PUBLIC_INTERFACE
@@ -151,6 +172,7 @@ def revoke_token(token: str) -> None:
 def authenticate_token(token: str) -> Dict[str, Any]:
     """Validate a token, returning user info if valid or raising HTTPException."""
     _ensure_user_tables()
+    token_hash_hex = hash_token(token)
     with get_conn() as conn, conn.cursor() as cur:
         cur.execute(
             """
@@ -159,7 +181,7 @@ def authenticate_token(token: str) -> Dict[str, Any]:
             join users u on u.id = s.user_id
             where s.token=%s
             """,
-            (token,),
+            (token_hash_hex,),
         )
         r = cur.fetchone()
         if not r:
@@ -179,6 +201,12 @@ def get_current_user(request: Request) -> Dict[str, Any]:
     if not token:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing bearer token")
     return authenticate_token(token)
+
+
+# PUBLIC_INTERFACE
+def require_user(user=Depends(get_current_user)) -> Dict[str, Any]:
+    """Dependency to require an authenticated user; returns the user dict."""
+    return user
 
 
 # PUBLIC_INTERFACE
