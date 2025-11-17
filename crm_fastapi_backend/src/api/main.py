@@ -138,13 +138,20 @@ def health_check():
     tags=["Health"],
 )
 def health_db():
-    """Attempt a simple DB query to verify connectivity and basic readiness."""
+    """Attempt a simple DB query to verify connectivity and basic readiness.
+
+    Returns:
+        200: {"status": "ok"} when DB is reachable
+        503: {"status": "degraded", "detail": "..."} when unavailable
+    """
     try:
         with get_conn() as conn, conn.cursor() as cur:
             cur.execute("select 1")
             cur.fetchone()
         return {"status": "ok"}
-    except Exception:
+    except Exception as e:
+        # Log sanitized error; avoid sensitive details in the response
+        logger.warning("Database health check failed: %s", e)
         return JSONResponse(status_code=503, content={"status": "degraded", "detail": "database unavailable"})
 
 
@@ -154,24 +161,72 @@ def health_db():
     tags=["Health"],
 )
 def health_migrations():
-    """Report migration tracking status and pending count if MIGRATIONS_PATH is configured."""
+    """Report migration tracking status and pending count if MIGRATIONS_PATH is configured.
+
+    Returns:
+        200: {"status":"ok","applied":<int>,"pending":<int|None>,"latest":{"id":<str>,"applied_at":<iso str>}?}
+        503: {"status":"degraded","detail":"..."} when tracking is missing/unreachable
+    """
     try:
         applied_count = 0
+        latest_id = None
+        latest_applied_at_iso = None
+        table_used = None
+
         with get_conn() as conn, conn.cursor() as cur:
-            # schema_migrations may not exist yet
-            cur.execute(
-                "select to_regclass('public.schema_migrations') is not null"
-            )
-            exists = bool(cur.fetchone()[0])
-            if exists:
+            # Prefer schema_migrations (used by this app); fall back to app_migrations if present
+            cur.execute("select to_regclass('public.schema_migrations') is not null")
+            has_schema = bool(cur.fetchone()[0])
+
+            if has_schema:
+                table_used = "schema_migrations"
                 cur.execute("select count(1) from schema_migrations")
-                applied_count = int(cur.fetchone()[0])
+                applied_count = int(cur.fetchone()[0] or 0)
+                cur.execute("select filename, applied_at from schema_migrations order by applied_at desc limit 1")
+                r = cur.fetchone()
+                if r:
+                    latest_id = str(r[0])
+                    latest_applied_at_iso = r[1].isoformat() if r[1] is not None else None
+            else:
+                # Check alternate table name
+                cur.execute("select to_regclass('public.app_migrations') is not null")
+                has_app = bool(cur.fetchone()[0])
+                if has_app:
+                    table_used = "app_migrations"
+                    cur.execute("select count(1) from app_migrations")
+                    applied_count = int(cur.fetchone()[0] or 0)
+                    # Attempt to read an id/timestamp if available
+                    try:
+                        cur.execute("select id, applied_at from app_migrations order by applied_at desc limit 1")
+                        r2 = cur.fetchone()
+                        if r2:
+                            latest_id = str(r2[0])
+                            latest_applied_at_iso = r2[1].isoformat() if r2[1] is not None else None
+                    except Exception:
+                        # app_migrations schema may differ; ignore latest if not available
+                        pass
+
+        # Determine pending migrations based on MIGRATIONS_PATH (if configured)
         pending = None
         if settings.migrations_path and os.path.isdir(settings.migrations_path):
             sql_files = [f for f in os.listdir(settings.migrations_path) if f.lower().endswith(".sql")]
-            pending = max(0, len(sql_files) - applied_count)
-        return {"status": "ok", "applied": applied_count, "pending": pending}
-    except Exception:
+            if table_used:
+                pending = max(0, len(sql_files) - applied_count)
+            else:
+                # If tracking table is missing, all files are considered pending
+                pending = len(sql_files)
+
+        if table_used is None:
+            # Tracking table missing/unavailable
+            return JSONResponse(status_code=503, content={"status": "degraded", "detail": "migration tracking table missing"})
+
+        payload = {"status": "ok", "applied": applied_count, "pending": pending}
+        if latest_id or latest_applied_at_iso:
+            payload["latest"] = {"id": latest_id, "applied_at": latest_applied_at_iso}
+        return payload
+    except Exception as e:
+        # Log sanitized error; avoid sensitive details in the response
+        logger.warning("Health migrations check failed: %s", e)
         return JSONResponse(status_code=503, content={"status": "degraded", "detail": "migration tracking unavailable"})
 
 
