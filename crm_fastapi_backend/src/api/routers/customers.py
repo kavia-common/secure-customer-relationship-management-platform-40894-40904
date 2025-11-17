@@ -107,6 +107,7 @@ def _ensure_tables() -> None:
         )
 
 
+# PUBLIC_INTERFACE
 @router.get(
     "",
     summary="List customers",
@@ -185,6 +186,7 @@ def list_customers(
     return CustomerListOut(items=items, total=total, page=page, page_size=page_size)
 
 
+# PUBLIC_INTERFACE
 @router.post("", summary="Create customer", response_model=CustomerOut, status_code=201)
 def create_customer(payload: CustomerIn, request: Request, user=Depends(get_current_user)) -> CustomerOut:
     """Create a customer record."""
@@ -206,6 +208,7 @@ def create_customer(payload: CustomerIn, request: Request, user=Depends(get_curr
     return out
 
 
+# PUBLIC_INTERFACE
 @router.get("/{customer_id}", summary="Get customer", response_model=CustomerDetailOut)
 def get_customer(customer_id: int, user=Depends(get_current_user)) -> CustomerDetailOut:
     """Get a customer by ID; include recent interactions and open requests."""
@@ -231,6 +234,7 @@ def get_customer(customer_id: int, user=Depends(get_current_user)) -> CustomerDe
         return CustomerDetailOut(**base.model_dump(), interactions=ints, open_requests=reqs)
 
 
+# PUBLIC_INTERFACE
 @router.patch("/{customer_id}", summary="Patch customer", response_model=CustomerOut)
 def patch_customer(customer_id: int, payload: CustomerPatch, request: Request, user=Depends(get_current_user)) -> CustomerOut:
     """Patch a customer record (partial update)."""
@@ -264,6 +268,7 @@ def patch_customer(customer_id: int, payload: CustomerPatch, request: Request, u
     return out
 
 
+# PUBLIC_INTERFACE
 @router.delete("/{customer_id}", summary="Delete customer", status_code=200)
 async def delete_customer(customer_id: int, request: Request, user=Depends(get_current_user)) -> dict:
     """Delete a customer and return a small confirmation JSON with HTTP 200."""
@@ -274,6 +279,7 @@ async def delete_customer(customer_id: int, request: Request, user=Depends(get_c
     return {"detail": "deleted"}
 
 
+# PUBLIC_INTERFACE
 @router.get("/{customer_id}/interactions", summary="List customer interactions", response_model=List[InteractionSummary])
 def customer_interactions(customer_id: int, user=Depends(get_current_user)) -> List[InteractionSummary]:
     """List interactions for a specific customer."""

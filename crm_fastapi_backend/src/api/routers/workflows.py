@@ -55,6 +55,7 @@ def _ensure_table() -> None:
         cur.execute("alter table workflows add column if not exists published_at timestamptz null")
 
 
+# PUBLIC_INTERFACE
 @router.post("", summary="Upsert workflow", response_model=WorkflowOut, dependencies=[Depends(require_role("admin"))])
 def upsert_workflow(payload: WorkflowIn, request: Request, user=Depends(get_current_user)) -> WorkflowOut:
     """Create or update a workflow definition by key (kept for compatibility)."""
@@ -77,6 +78,7 @@ def upsert_workflow(payload: WorkflowIn, request: Request, user=Depends(get_curr
     return out
 
 
+# PUBLIC_INTERFACE
 @router.post("/draft", summary="Create/update draft workflow", response_model=WorkflowOut, dependencies=[Depends(require_role("admin"))])
 def draft_workflow(payload: WorkflowIn, request: Request, user=Depends(get_current_user)) -> WorkflowOut:
     """Create or update a workflow draft."""
@@ -97,6 +99,7 @@ def draft_workflow(payload: WorkflowIn, request: Request, user=Depends(get_curre
     return out
 
 
+# PUBLIC_INTERFACE
 @router.post("/publish", summary="Publish workflow", response_model=WorkflowOut, dependencies=[Depends(require_role("admin"))])
 def publish_workflow(payload: WorkflowKeyIn, request: Request, user=Depends(get_current_user)) -> WorkflowOut:
     """Publish a workflow (increments version and sets status=published)."""
@@ -119,6 +122,7 @@ def publish_workflow(payload: WorkflowKeyIn, request: Request, user=Depends(get_
     return out
 
 
+# PUBLIC_INTERFACE
 @router.post("/test", summary="Test workflow", response_model=dict, dependencies=[Depends(require_role("admin"))])
 def test_workflow(payload: WorkflowTestIn, user=Depends(get_current_user)) -> Dict[str, Any]:
     """Test a workflow run (stub)."""
@@ -126,6 +130,7 @@ def test_workflow(payload: WorkflowTestIn, user=Depends(get_current_user)) -> Di
     return {"ok": True, "key": payload.key, "input_echo": payload.input}
 
 
+# PUBLIC_INTERFACE
 @router.get("", summary="List workflows", response_model=List[WorkflowOut])
 def list_workflows(user=Depends(get_current_user)) -> List[WorkflowOut]:
     """List workflow definitions."""

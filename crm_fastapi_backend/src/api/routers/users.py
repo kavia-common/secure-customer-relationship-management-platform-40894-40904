@@ -17,6 +17,7 @@ class MeOut(BaseModel):
     role: str = Field(..., description="User role")
 
 
+# PUBLIC_INTERFACE
 @router.get("/me", summary="Who am I (users)", response_model=MeOut)
 def users_me(user=Depends(get_current_user)) -> Dict[str, Any]:
     """Return the current authenticated user profile (alias endpoint)."""

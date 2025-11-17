@@ -122,6 +122,7 @@ def on_shutdown() -> None:
         pass
 
 
+# PUBLIC_INTERFACE
 @app.get(
     "/",
     summary="Health Check",
@@ -132,6 +133,7 @@ def health_check():
     return {"status": "ok"}
 
 
+# PUBLIC_INTERFACE
 @app.get(
     "/health/db",
     summary="Database health",
@@ -155,6 +157,7 @@ def health_db():
         return JSONResponse(status_code=503, content={"status": "degraded", "detail": "database unavailable"})
 
 
+# PUBLIC_INTERFACE
 @app.get(
     "/health/migrations",
     summary="Migration status",

@@ -18,6 +18,7 @@ class InboxItem(BaseModel):
     status: str = Field(..., description="Status")
 
 
+# PUBLIC_INTERFACE
 @router.get("", summary="List inbox items (deprecated)", response_model=List[InboxItem])
 def list_inbox(
     only_priority: Optional[str] = Query(None, description="Filter by priority"),
@@ -33,6 +34,7 @@ def list_inbox(
     return items
 
 
+# PUBLIC_INTERFACE
 @router.get("/messages", summary="List inbox messages", response_model=List[InboxItem])
 def list_messages(
     priority: Optional[str] = Query(None, description="Filter by priority"),
@@ -42,6 +44,7 @@ def list_messages(
     return list_inbox(priority, user)  # reuse stub
 
 
+# PUBLIC_INTERFACE
 @router.get("/messages/{message_id}", summary="Get inbox message", response_model=InboxItem)
 def get_message(message_id: str, user=Depends(get_current_user)) -> InboxItem:
     """Stubbed inbox message by id."""
@@ -49,6 +52,7 @@ def get_message(message_id: str, user=Depends(get_current_user)) -> InboxItem:
     return InboxItem(id=message_id, type="request", title="Stub message", priority="normal", status="open")
 
 
+# PUBLIC_INTERFACE
 @router.post("/messages", summary="Create inbox message", response_model=InboxItem, status_code=201)
 def create_message(item: InboxItem, user=Depends(get_current_user)) -> InboxItem:
     """Stubbed create message (echoes back)."""

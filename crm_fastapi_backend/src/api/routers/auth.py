@@ -27,6 +27,7 @@ class TokenOut(BaseModel):
     expires_at: str = Field(..., description="Token expiry timestamp (UTC)")
 
 
+# PUBLIC_INTERFACE
 @router.post("/signup", summary="Create user", response_model=dict)
 def signup(payload: SignupIn, request: Request) -> Dict[str, Any]:
     """Create a new user account."""
@@ -38,6 +39,7 @@ def signup(payload: SignupIn, request: Request) -> Dict[str, Any]:
     return {"user_id": user_id}
 
 
+# PUBLIC_INTERFACE
 @router.post("/login", summary="Login", response_model=TokenOut)
 def login(payload: LoginIn, request: Request) -> TokenOut:
     """Authenticate and return a bearer token."""
@@ -46,6 +48,7 @@ def login(payload: LoginIn, request: Request) -> TokenOut:
     return TokenOut(token=out["token"], expires_at=out["expires_at"].isoformat())
 
 
+# PUBLIC_INTERFACE
 @router.post("/logout", summary="Logout", status_code=200)
 async def logout(request: Request, user=Depends(get_current_user)) -> dict:
     """Revoke the current session token and return a confirmation JSON with HTTP 200."""
@@ -58,6 +61,7 @@ async def logout(request: Request, user=Depends(get_current_user)) -> dict:
     return {"detail": "logged out"}
 
 
+# PUBLIC_INTERFACE
 @router.post("/refresh", summary="Refresh token", response_model=TokenOut)
 def refresh_token(user=Depends(get_current_user)) -> TokenOut:
     """Refresh the bearer token for the current user by issuing a new session."""
@@ -65,6 +69,7 @@ def refresh_token(user=Depends(get_current_user)) -> TokenOut:
     return TokenOut(token=out["token"], expires_at=out["expires_at"].isoformat())
 
 
+# PUBLIC_INTERFACE
 @router.get("/me", summary="Who am I", response_model=dict)
 def me(user=Depends(get_current_user)) -> Dict[str, Any]:
     """Return the current authenticated user profile."""

@@ -40,6 +40,7 @@ def _ensure_user_table() -> None:
         )
 
 
+# PUBLIC_INTERFACE
 @router.get("/users", summary="List users", response_model=List[UserRow])
 def list_users(user=Depends(require_role("admin"))) -> List[UserRow]:
     """List all users (admin only)."""
@@ -50,6 +51,7 @@ def list_users(user=Depends(require_role("admin"))) -> List[UserRow]:
         return [UserRow(id=int(r[0]), email=r[1], role=r[2]) for r in rows]
 
 
+# PUBLIC_INTERFACE
 @router.post("/users", summary="Create user", response_model=UserRow, status_code=201)
 def create_user(payload: CreateUserIn, user=Depends(require_role("admin"))) -> UserRow:
     """Create a new user (admin only)."""
@@ -63,6 +65,7 @@ def create_user(payload: CreateUserIn, user=Depends(require_role("admin"))) -> U
         return UserRow(id=int(r[0]), email=r[1], role=r[2])
 
 
+# PUBLIC_INTERFACE
 @router.patch("/users/{user_id}", summary="Update user", response_model=UserRow)
 def patch_user(user_id: int, payload: UpdateUserIn, user=Depends(require_role("admin"))) -> UserRow:
     """Update a user's email, role, or password."""
@@ -87,6 +90,7 @@ def patch_user(user_id: int, payload: UpdateUserIn, user=Depends(require_role("a
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No updatable fields provided")
 
 
+# PUBLIC_INTERFACE
 @router.delete("/users/{user_id}", summary="Delete user", status_code=200)
 def delete_user(user_id: int, user=Depends(require_role("admin"))) -> dict:
     """Delete a user (admin only)."""
@@ -117,6 +121,7 @@ def _ensure_roles_table() -> None:
         )
 
 
+# PUBLIC_INTERFACE
 @router.get("/roles", summary="List roles", response_model=List[RoleRow])
 def list_roles(user=Depends(require_role("admin"))) -> List[RoleRow]:
     """List roles available in the system (admin only)."""
@@ -127,6 +132,7 @@ def list_roles(user=Depends(require_role("admin"))) -> List[RoleRow]:
         return [RoleRow(id=int(r[0]), name=r[1]) for r in rows]
 
 
+# PUBLIC_INTERFACE
 @router.post("/roles", summary="Create role", response_model=RoleRow, status_code=201)
 def create_role(payload: RoleIn, user=Depends(require_role("admin"))) -> RoleRow:
     """Create a role."""
@@ -139,6 +145,7 @@ def create_role(payload: RoleIn, user=Depends(require_role("admin"))) -> RoleRow
         return RoleRow(id=int(r[0]), name=r[1])
 
 
+# PUBLIC_INTERFACE
 @router.patch("/roles/{role_id}", summary="Update role", response_model=RoleRow)
 def patch_role(role_id: int, payload: RoleIn, user=Depends(require_role("admin"))) -> RoleRow:
     """Rename a role."""
@@ -151,6 +158,7 @@ def patch_role(role_id: int, payload: RoleIn, user=Depends(require_role("admin")
         return RoleRow(id=int(r[0]), name=r[1])
 
 
+# PUBLIC_INTERFACE
 @router.delete("/roles/{role_id}", summary="Delete role", status_code=200)
 def delete_role(role_id: int, user=Depends(require_role("admin"))) -> dict:
     """Delete a role."""
@@ -168,6 +176,7 @@ class AuditRow(BaseModel):
     resource_id: Optional[int]
 
 
+# PUBLIC_INTERFACE
 @router.get("/audit", summary="View audit logs", response_model=List[AuditRow])
 def view_audit(
     limit: int = Query(100, ge=1, le=1000, description="Max records"),

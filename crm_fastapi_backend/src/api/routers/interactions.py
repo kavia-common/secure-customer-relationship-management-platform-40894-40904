@@ -44,6 +44,7 @@ def _ensure_table() -> None:
         )
 
 
+# PUBLIC_INTERFACE
 @router.post("", summary="Create interaction", response_model=InteractionOut, status_code=201)
 def create_interaction(payload: InteractionIn, request: Request, user=Depends(get_current_user)) -> InteractionOut:
     """Create an interaction event for a customer."""
@@ -72,6 +73,7 @@ def create_interaction(payload: InteractionIn, request: Request, user=Depends(ge
     return out
 
 
+# PUBLIC_INTERFACE
 @router.get("", summary="List interactions", response_model=List[InteractionOut])
 def list_interactions(
     customer_id: Optional[int] = Query(None, description="Filter by customer ID"),

@@ -90,6 +90,7 @@ def _ensure_tables() -> None:
         )
 
 
+# PUBLIC_INTERFACE
 @router.post("", summary="Create request", response_model=RequestOut, status_code=201)
 def create_request(payload: RequestIn, request: Request, user=Depends(get_current_user)) -> RequestOut:
     """Create a service request."""
@@ -125,6 +126,7 @@ def create_request(payload: RequestIn, request: Request, user=Depends(get_curren
     return out
 
 
+# PUBLIC_INTERFACE
 @router.get("", summary="List requests", response_model=List[RequestOut])
 def list_requests(
     status_q: Optional[str] = Query(None, alias="status", description="Filter by status"),
@@ -189,6 +191,7 @@ def list_requests(
         ]
 
 
+# PUBLIC_INTERFACE
 @router.get("/{request_id}", summary="Get request", response_model=RequestOut)
 def get_request(request_id: int, user=Depends(get_current_user)) -> RequestOut:
     """Get a single request by id."""
@@ -213,6 +216,7 @@ def get_request(request_id: int, user=Depends(get_current_user)) -> RequestOut:
         )
 
 
+# PUBLIC_INTERFACE
 @router.patch("/{request_id}", summary="Patch request", response_model=RequestOut)
 def patch_request(request_id: int, payload: RequestPatch, request: Request, user=Depends(get_current_user)) -> RequestOut:
     """Patch request fields (subject, description, priority, meta, assignee)."""
@@ -260,6 +264,7 @@ def patch_request(request_id: int, payload: RequestPatch, request: Request, user
     return out
 
 
+# PUBLIC_INTERFACE
 @router.post("/{request_id}/transition", summary="Change request status", response_model=HistoryOut)
 def transition_request(request_id: int, payload: TransitionIn, request: Request, user=Depends(get_current_user)) -> HistoryOut:
     """Transition request status and record history."""
@@ -286,6 +291,7 @@ def transition_request(request_id: int, payload: TransitionIn, request: Request,
     return out
 
 
+# PUBLIC_INTERFACE
 @router.get("/{request_id}/history", summary="Request history", response_model=List[HistoryOut])
 def get_history(request_id: int, user=Depends(get_current_user)) -> List[HistoryOut]:
     """Return history records for a request."""
@@ -302,12 +308,14 @@ def get_history(request_id: int, user=Depends(get_current_user)) -> List[History
         ]
 
 
+# PUBLIC_INTERFACE
 @router.post("/{request_id}/close", summary="Close request", response_model=HistoryOut)
 def close_request(request_id: int, request: Request, user=Depends(get_current_user)) -> HistoryOut:
     """Close a request and add a history event."""
     return transition_request(request_id, TransitionIn(to_status="closed", note="closed"), request, user)
 
 
+# PUBLIC_INTERFACE
 @router.post("/{request_id}/escalate", summary="Escalate request", response_model=HistoryOut)
 def escalate_request(request_id: int, request: Request, user=Depends(get_current_user)) -> HistoryOut:
     """Escalate a request and add a history event."""

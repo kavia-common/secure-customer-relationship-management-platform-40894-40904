@@ -17,6 +17,7 @@ class MetricsOut(BaseModel):
     resolved_requests_last_7d: int = Field(..., description="Requests resolved in the last 7 days")
 
 
+# PUBLIC_INTERFACE
 @router.get("/summary", summary="Metrics summary", response_model=MetricsOut)
 def metrics_summary(user=Depends(get_current_user)) -> MetricsOut:
     """Return minimal KPI counts."""
@@ -49,6 +50,7 @@ class RequestsMetricsOut(BaseModel):
     closed: int = 0
 
 
+# PUBLIC_INTERFACE
 @router.get("/requests", summary="Requests metrics by status", response_model=RequestsMetricsOut)
 def requests_metrics(user=Depends(get_current_user)) -> RequestsMetricsOut:
     """Aggregate requests by status."""
@@ -74,6 +76,7 @@ class AgentMetric(BaseModel):
     open_assigned: int
 
 
+# PUBLIC_INTERFACE
 @router.get("/agents", summary="Agent workload metrics", response_model=List[AgentMetric], dependencies=[Depends(require_roles(["admin", "supervisor"]))])
 def agents_metrics() -> List[AgentMetric]:
     """List agents with count of open/assigned requests."""
