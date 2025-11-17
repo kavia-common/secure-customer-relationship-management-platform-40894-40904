@@ -53,15 +53,20 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         return response
 
 
-# Simple in-memory per-IP throttling
+# Simple in-memory per-IP throttling (excluding health endpoints)
 class RateLimiterMiddleware(BaseHTTPMiddleware):
-    def __init__(self, app: FastAPI):
+    def __init__(self, app: FastAPI, exclude_paths: tuple[str, ...] = ("/", "/health/db", "/health/migrations")):
         super().__init__(app)
         self.window = settings.rate_limit_window_seconds
         self.limit = settings.rate_limit_requests
+        self.exclude_paths = set(exclude_paths)
         self.state: dict[str, tuple[int, float]] = {}  # ip -> (count, reset_ts)
 
     async def dispatch(self, request: Request, call_next: Callable):
+        path = request.url.path if request.url else ""
+        if path in self.exclude_paths:
+            return await call_next(request)
+
         ip = request.client.host if request.client else "unknown"
         now = time.time()
         count, reset = self.state.get(ip, (0, now + self.window))
@@ -71,11 +76,24 @@ class RateLimiterMiddleware(BaseHTTPMiddleware):
         self.state[ip] = (count, reset)
         if count > self.limit:
             retry = max(1, int(reset - now))
-            return JSONResponse({"detail": "Rate limit exceeded"}, status_code=429, headers={"Retry-After": str(retry)})
+            headers = {"Retry-After": str(retry)}
+            # Ensure security headers are present on throttled responses
+            headers.update({
+                "X-Frame-Options": "DENY",
+                "X-Content-Type-Options": "nosniff",
+                "Referrer-Policy": "no-referrer",
+                "Content-Security-Policy": "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'",
+            })
+            return JSONResponse({"detail": "Rate limit exceeded"}, status_code=429, headers=headers)
         return await call_next(request)
 
 
-# CORS
+# Middleware registration order:
+# - RateLimiter first
+# - Security headers next
+# - CORS last so it applies to all responses including errors/preflight
+app.add_middleware(RateLimiterMiddleware)
+app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
@@ -83,9 +101,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-app.add_middleware(SecurityHeadersMiddleware)
-app.add_middleware(RateLimiterMiddleware)
 
 
 @app.on_event("startup")
