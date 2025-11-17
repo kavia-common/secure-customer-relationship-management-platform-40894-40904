@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import datetime as dt
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
@@ -48,6 +49,13 @@ class RequestSummary(BaseModel):
 class CustomerDetailOut(CustomerOut):
     interactions: List[InteractionSummary] = Field(default_factory=list, description="Recent interactions")
     open_requests: List[RequestSummary] = Field(default_factory=list, description="Open requests")
+
+
+class CustomerListOut(BaseModel):
+    items: List[CustomerOut] = Field(..., description="Customers page items")
+    total: int = Field(..., description="Total count matching filters")
+    page: int = Field(..., description="Current page (1-based)")
+    page_size: int = Field(..., description="Page size")
 
 
 def _ensure_tables() -> None:
@@ -99,34 +107,82 @@ def _ensure_tables() -> None:
         )
 
 
-@router.get("", summary="List customers", response_model=List[CustomerOut])
+@router.get(
+    "",
+    summary="List customers",
+    response_model=CustomerListOut,
+)
 def list_customers(
     q: Optional[str] = Query(None, description="Search text for name/email/phone"),
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(50, ge=1, le=200, description="Page size"),
+    created_from: Optional[str] = Query(None, description="Filter by created_at >= ISO timestamp"),
+    created_to: Optional[str] = Query(None, description="Filter by created_at <= ISO timestamp"),
     user=Depends(get_current_user),
-) -> List[CustomerOut]:
-    """List customers with optional search and pagination."""
+) -> CustomerListOut:
+    """List customers with optional search and pagination.
+
+    Parameters:
+        q: Free-text search across name/email/phone (case-insensitive).
+        page: Page number (1-based).
+        page_size: Page size (max 200).
+        created_from: Optional ISO-8601 timestamp to filter created_at >= this value.
+        created_to: Optional ISO-8601 timestamp to filter created_at <= this value.
+
+    Returns:
+        CustomerListOut with items, total, page, and page_size.
+    """
     _ensure_tables()
     offset = (page - 1) * page_size
+
+    conditions: List[str] = []
+    params: List[object] = []
+
+    if q:
+        like = f"%{q.lower()}%"
+        conditions.append("(lower(name) like %s or lower(coalesce(email,'')) like %s or lower(coalesce(phone,'')) like %s)")
+        params.extend([like, like, like])
+
+    # Parse date filters safely
+    if created_from:
+        try:
+            dt_from = dt.datetime.fromisoformat(created_from)
+        except Exception:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid created_from")
+        conditions.append("created_at >= %s")
+        params.append(dt_from)
+    if created_to:
+        try:
+            dt_to = dt.datetime.fromisoformat(created_to)
+        except Exception:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid created_to")
+        conditions.append("created_at <= %s")
+        params.append(dt_to)
+
+    where = f"where {' and '.join(conditions)}" if conditions else ""
     with get_conn() as conn, conn.cursor() as cur:
-        if q:
-            like = f"%{q.lower()}%"
-            cur.execute(
-                """
-                select id, name, email, phone, data from customers
-                where lower(name) like %s or lower(coalesce(email,'')) like %s or lower(coalesce(phone,'')) like %s
-                order by id desc limit %s offset %s
-                """,
-                (like, like, like, page_size, offset),
-            )
-        else:
-            cur.execute("select id, name, email, phone, data from customers order by id desc limit %s offset %s", (page_size, offset))
+        # total
+        cur.execute(f"select count(1) from customers {where}", params)
+        total = int(cur.fetchone()[0] or 0)
+
+        # page items
+        cur.execute(
+            f"""
+            select id, name, email, phone, data
+            from customers
+            {where}
+            order by id desc
+            limit %s offset %s
+            """,
+            (*params, page_size, offset),
+        )
         rows = cur.fetchall() or []
-        return [
-            CustomerOut(id=int(r[0]), name=r[1], email=r[2], phone=r[3], data=r[4] or {})
-            for r in rows
-        ]
+
+    items = [
+        CustomerOut(id=int(r[0]), name=r[1], email=r[2], phone=r[3], data=r[4] or {})
+        for r in rows
+    ]
+    return CustomerListOut(items=items, total=total, page=page, page_size=page_size)
 
 
 @router.post("", summary="Create customer", response_model=CustomerOut, status_code=201)
